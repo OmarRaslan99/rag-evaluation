@@ -57,10 +57,11 @@ def main():
     rag.load_documents(sample_docs)
 
     query = "Who won two Nobel Prizes for research on radioactivity?"
-    query_1 = "Who introduced the theory of relativity?"
-    query_3 = "what is the name of the book that talked about the natural selection?"
+
     doc = rag.get_most_relevant_docs(query)
+
     answer = rag.generate_answer(query, doc)
+    
     print(f"Query:   {query}")
     print(f"Context: {doc}")
     print(f"Answer:  {answer}")
