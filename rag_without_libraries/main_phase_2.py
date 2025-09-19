@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 import numpy as np
 
 # === Option PDF ===
-# Utilise pypdf pour extraire le texte du PDF RGPD_2.pdf
+# Utilise pypdf pour extraire le texte du PDF RGPD_2.pdf ou ww2.pdf
 # pip install pypdf
 from pypdf import PdfReader
 
@@ -218,12 +218,12 @@ def llm_generate_qa_for_chunk(llm: ChatOpenAI, chunk_text, max_pairs=1):
     Retour : liste de tuples (question, reponse_attendue).
     """
     system = (
-        "Tu es assistant juridique. Crée des paires (Question, Réponse) "
+        "Tu es assistant. Crée des paires (Question, Réponse) "
         "STRICTEMENT basées sur le texte donné. Réponses courtes (1-2 phrases). "
         "Pas d'invention. La question doit être claire et la réponse se trouve dans le texte."
     )
     human = (
-        f"Texte (RGPD extrait) :\n{chunk_text}\n\n"
+        f"Texte :\n{chunk_text}\n\n"
         f"Produis {max_pairs} question(s) et réponse(s) attendue(s). "
         "Format clair :\n"
         "Q: ...\nA: ...\n"
@@ -324,7 +324,7 @@ def chat_loop(rag: RAG, chunks, csv_path, k=3):
       et on utilise sa réponse_attendue pour évaluer.
     - On met à jour la colonne 'reponse_obtenue' dans le CSV pour cette ligne.
     """
-    print("\n=== Mode Chat RGPD (q pour quitter) ===")
+    print("\n=== Mode Chat (q pour quitter) ===")
     dataset_rows = load_dataset(csv_path)
 
     while True:
@@ -388,8 +388,12 @@ def chat_loop(rag: RAG, chunks, csv_path, k=3):
 
 def main():
     load_dotenv()
-    PDF_PATH = os.environ.get("RGPD_PDF_PATH", "RGPD_2.pdf")  # ou chemin absolu
-    CSV_PATH = os.environ.get("RGPD_CSV_PATH", "rgpd_dataset.csv")
+    # PDF_PATH = os.environ.get("RGPD_PDF_PATH", "RGPD_2.pdf")  # ou chemin absolu
+    # CSV_PATH = os.environ.get("RGPD_CSV_PATH", "rgpd_dataset.csv")
+    # PDF_PATH = os.environ.get("ww2_PDF_PATH", "ww2.pdf")  # ou chemin absolu
+    # CSV_PATH = os.environ.get("ww2_CSV_PATH", "ww2_dataset.csv")
+    PDF_PATH = os.environ.get("impact_PDF_PATH", "page_impact_social_societal.pdf")  # ou chemin absolu
+    CSV_PATH = os.environ.get("impact_CSV_PATH", "page_impact_social_societal_dataset.csv")
     MODEL = os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o")
     K = int(os.environ.get("RAG_TOPK", "3"))
 
@@ -404,7 +408,7 @@ def main():
             chunk_size=900,
             overlap=150,
             max_pairs_per_chunk=1,
-            max_chunks=50  # pour un premier run, tu peux augmenter ensuite
+            max_chunks=50  # pour un premier run, on peux augmenter ensuite
         )
     else:
         print("[Init] Dataset existant détecté.")
