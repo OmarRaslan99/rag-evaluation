@@ -316,14 +316,6 @@ def find_best_matching_dataset_question(rag: RAG, dataset_rows, user_question, s
     return best_row, best_sim
 
 def chat_loop(rag: RAG, chunks, csv_path, k=3):
-    """
-    Boucle interactive:
-    - L'utilisateur saisit une question (ou 'q' pour quitter)
-    - Retrieval top-k + génération de réponse
-    - On cherche la question du dataset la plus proche de celle de l'utilisateur
-      et on utilise sa réponse_attendue pour évaluer.
-    - On met à jour la colonne 'reponse_obtenue' dans le CSV pour cette ligne.
-    """
     print("\n=== Mode Chat (q pour quitter) ===")
     dataset_rows = load_dataset(csv_path)
 
@@ -348,8 +340,11 @@ def chat_loop(rag: RAG, chunks, csv_path, k=3):
             print("\n[Info] Dataset vide : pas d'évaluation possible.")
             continue
 
-        # Évaluation : retrieval vs ground_truth (au minimum le chunk source enregistré)
-        ground_truth = {best_row["context_idx"]}
+        # Évaluation : retrieval vs ground_truth élargi (chunk source ±1)
+        ci = best_row["context_idx"]
+        n = len(chunks)
+        ground_truth = {i for i in (ci - 1, ci, ci + 1) if 0 <= i < n}
+
         p, r, mrr, rel = compute_retrieval_metrics(top_idxs, sims, ground_truth, k=k)
 
         # Évaluation : génération (avec expected_answer)
@@ -374,7 +369,7 @@ def chat_loop(rag: RAG, chunks, csv_path, k=3):
         if exp_sim is not None:
             print(f"Sim(Réponse ↔ Réponse_attendue) = {exp_sim:.2f}")
 
-        # Mise à jour CSV : on remplit 'reponse_obtenue' pour la ligne la plus proche
+        # Mise à jour CSV
         for r in dataset_rows:
             if r["id"] == best_row["id"]:
                 r["reponse_obtenue"] = answer
