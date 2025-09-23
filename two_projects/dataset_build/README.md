@@ -67,6 +67,7 @@ python project1_build_dataset.py \
 python project1_build_dataset.py \
   --pdf page_impact_social_societal.pdf \
   --out page_impact_social_societal_dataset.csv \
+  --chunk-size 900 --overlap 150 \
   --pairs-per-chunk 1 --max-chunks 50
 ```
 
