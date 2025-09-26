@@ -1,9 +1,9 @@
-# Mini RAG + Évaluation “from scratch” (RGPD)
+# Mini RAG + Évaluation “from scratch”
 
 Ce projet montre **comment construire un petit pipeline RAG** (Retrieval-Augmented Generation) **et l’évaluer sans bibliothèques d’évaluation externes**, en deux phases :
 
 1. **Phase 1** — Données « codées en dur » (jouet pédagogique)
-2. **Phase 2** — **Dataset RGPD** à partir d’un PDF (articles 1–19), **chunking + CSV + chat + évaluation**.
+2. **Phase 2** — **Dataset** à partir d’un PDF, **chunking + CSV + chat + évaluation**.
 
 L’objectif est pédagogique : comprendre les **briques minimales** d’un RAG et les **métriques** de base côté retrieval et génération.
 
@@ -11,7 +11,7 @@ L’objectif est pédagogique : comprendre les **briques minimales** d’un RAG 
 
 ## 🔧 Fonctionnalités
 
-* **Extraction PDF** (RGPD\_2.pdf) → **chunking** avec overlap
+* **Extraction PDF** → **chunking** avec overlap
 * **Embeddings** (documents, requêtes, réponses)
 * **Retrieval top-k** par **similarité cosinus**
 * **Génération** de réponses avec un LLM (confiné aux passages fournis)
@@ -28,7 +28,7 @@ L’objectif est pédagogique : comprendre les **briques minimales** d’un RAG 
 ## 🧱 Architecture (vue d’ensemble)
 
 ```
-PDF RGPD (articles 1–19)
+      PDF
         │
         ▼
    Extraction texte
@@ -52,10 +52,9 @@ PDF RGPD (articles 1–19)
 
 ## 🗂️ Fichiers et données
 
-* **`main_phase_1.py`** : script de la phase 1 avec la data codée en dure
-* **`main_phase_2.py`** : script principal (extraction, dataset, chat, évaluation)
-* **`RGPD_2.pdf`** : PDF source (articles 1–19 du RGPD)
-* **`rgpd_dataset.csv`** : dataset généré, colonnes :
+* **`eval_from_scratch.py`** : script de la phase 1 avec la data codée en dure
+* **`eval_from_scratch_avec_pdf.py`** : script principal (extraction, dataset, chat, évaluation)
+* **`rgpd_dataset.csv`** : dataset généré, colonnes (rgpd comme exemple) :
 
   * `id` : identifiant
   * `context` : le chunk de texte
@@ -79,26 +78,20 @@ pip install langchain-openai python-dotenv numpy pypdf
 
 ### Variables d’environnement (fichier `.env`)
 
-```env
-OPENAI_API_KEY=sk-...
-OPENAI_CHAT_MODEL=gpt-4o
-RGPD_PDF_PATH=RGPD_2.pdf
-RGPD_CSV_PATH=rgpd_dataset.csv
-RAG_TOPK=3
-```
+Copier et coller la contenu de `.env.example` dans `.env` en ajustant les valeurs
 
 ---
 
 ## ▶️ Lancer le projet
 
 ```bash
-python main_phase_2.py
+python eval_from_scratch_avec_pdf.py
 ```
-(ou `python main_phase_1.py` pour tester la phase 1)
+(ou `eval_from_scratch.py` pour tester la phase 1)
 
 * **Premier run** :
 
-  1. Lit `RGPD_2.pdf`, **chunk** le texte
+  1. Lit `RGPD_2.pdf` (ici RGPD est un exemple), **chunk** le texte
   2. **Génère** des paires **Question/Réponse\_attendue** (LLM)
   3. **Crée**/met à jour `rgpd_dataset.csv`
   4. Lance le **mode chat** (terminal)
@@ -176,25 +169,6 @@ python main_phase_2.py
 * **Ground truth minimal** : par défaut, on considère au moins le `context_idx` de la question la plus proche comme pertinent
 * **Similarités ≠ vérité absolue** : utiles pour comparer et progresser, mais restent des approximations
 * **LLM** : génère aussi les questions/réponses attendues du dataset → bien calibrer le *prompting* pour limiter l’invention
-
----
-
-## 🛠️ Personnaliser / Étendre
-
-* Multiplier les **Q/A par chunk** (`max_pairs_per_chunk > 1`)
-* Ajouter d’autres **métriques** (nDCG, MAP, etc.)
-* Introduire un **judge LLM** optionnel pour la foi/contradiction (hors “from scratch”)
-* Remplacer l’**embedding** par un autre modèle si besoin
-* Persister les **embeddings** (fichier / base) pour accélérer
-
----
-
-## ❓Dépannage rapide
-
-* **CSV vide ?** Premier run normal. Vérifie `RGPD_PDF_PATH`, droits de lecture, contenu du PDF.
-* **Pas de réponses pertinentes ?** Augmente `chunk_size`, ajuste `overlap`, ou `RAG_TOPK`.
-* **Hallucination élevée ?** Renforce le message système (« répondre uniquement à partir des extraits »), réduis le bruit des chunks.
-* **Precision/Recall à 0 alors qu’un chunk semble correct ?** Vérifie que le **ground truth** correspond bien à l’index (`context_idx`) de la ligne ciblée.
 
 ---
 

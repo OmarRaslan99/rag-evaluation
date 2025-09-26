@@ -1,4 +1,4 @@
-# Projet 2 : Chat + Évaluation + Logs CSV
+# Projet 2 : `chat_eval.py` : Chat + Évaluation + Logs CSV
 
 ## 1) Objet
 
@@ -30,10 +30,11 @@ OPENAI_API_KEY=sk-...
 OPENAI_CHAT_MODEL=gpt-4o
 RAG_TOPK=3
 ```
+Copier et coller la contenu de `.env.example` dans `.env` en ajustant les valeurs
 
 ## 4) Formats d’entrée
 
-### CSV (recommandé)
+### CSV
 
 Colonnes attendues (mêmes que Projet 1) :
 `id, context, question, reponse_attendue, reponse_obtenue, context_idx`
@@ -57,10 +58,10 @@ Liste d’objets contenant les mêmes clés :
 
 ## 5) Utilisation
 
-### Mode interactif
+### Exemple en **Mode interactif**
 
 ```bash
-python project2_chat_eval.py \
+python chat_eval.py \
   --dataset page_impact_social_societal_dataset.csv \
   --format csv \
   --out logs_chat_eval.csv \
@@ -69,10 +70,10 @@ python project2_chat_eval.py \
 
 Tape tes questions ; `q` pour quitter.
 
-### Mode one-shot (une seule question)
+### Exemple en **Mode one-shot** (une seule question)
 
 ```bash
-python project2_chat_eval.py \
+python chat_eval.py \
   --dataset page_impact_social_societal_dataset.csv \
   --format csv \
   --out logs_chat_eval.csv \

@@ -1,4 +1,4 @@
-# Projet 1 : PDF → Dataset CSV
+# Projet 1 : `build_dataset.py` : PDF → Dataset CSV
 
 ## 1) Objet
 
@@ -28,11 +28,12 @@ Créer un fichier `.env` à la racine :
 OPENAI_API_KEY=sk-...
 OPENAI_CHAT_MODEL=gpt-4o
 ```
+Copier et coller la contenu de `.env.example` dans `.env` en ajustant les valeurs
 
 ## 4) Utilisation
 
 ```bash
-python project1_build_dataset.py \
+python build_dataset.py \
   --pdf chemin/vers/document.pdf \
   --out chemin/vers/dataset.csv \
   --chunk-size 900 \
@@ -64,11 +65,12 @@ python project1_build_dataset.py \
 ## 6) Exemple
 
 ```bash
-python project1_build_dataset.py \
+python build_dataset.py \
   --pdf page_impact_social_societal.pdf \
   --out page_impact_social_societal_dataset.csv \
   --chunk-size 900 --overlap 150 \
-  --pairs-per-chunk 1 --max-chunks 50
+  --pairs-per-chunk 1 \
+  --max-chunks 50
 ```
 
 ---
