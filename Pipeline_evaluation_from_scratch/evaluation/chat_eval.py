@@ -3,6 +3,7 @@ import os
 import csv
 import json
 import argparse
+import random
 from typing import List, Dict, Tuple, Optional
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -69,8 +70,8 @@ def load_dataset_csv(path: str) -> List[Dict]:
         reader = csv.DictReader(f)
         for r in reader:
             # conversions minimales
-            r["id"] = int(r.get("id", 0))
-            r["context_idx"] = int(r.get("context_idx", -1)) if r.get("context_idx", "") != "" else -1
+            r["id"] = int(r.get("id", 0)) if str(r.get("id", "")).strip().isdigit() else 0
+            r["context_idx"] = int(r.get("context_idx", -1)) if str(r.get("context_idx", "")).strip() != "" else -1
             rows.append(r)
     return rows
 
@@ -80,19 +81,16 @@ def load_dataset_json(path: str) -> List[Dict]:
     rows = []
     for r in data:
         row = {k: r.get(k, "") for k in DATASET_COLS}
-        row["id"] = int(row.get("id", 0)) if str(row.get("id", "")).strip() != "" else 0
+        row["id"] = int(row.get("id", 0)) if str(row.get("id", "")).strip().isdigit() else 0
         row["context_idx"] = int(row.get("context_idx", -1)) if str(row.get("context_idx", "")).strip() != "" else -1
         rows.append(row)
     return rows
 
 def extract_docs_from_dataset(rows: List[Dict]) -> List[str]:
     """
-    On construit la liste des 'contexts' dans l'ordre de leur index (context_idx),
-    sinon on retombe sur un simple set basé sur la position dans la liste.
+    Construit la liste des contexts par index (context_idx) pour éviter les doublons.
     """
-    # Si tous les context_idx sont valides, on trie par index
     if all(isinstance(r.get("context_idx", -1), int) and r["context_idx"] >= 0 for r in rows):
-        # évite duplications si plusieurs Q/A par même chunk
         idx_to_context = {}
         for r in rows:
             ci = r["context_idx"]
@@ -101,25 +99,7 @@ def extract_docs_from_dataset(rows: List[Dict]) -> List[str]:
         docs = [idx_to_context[i] for i in sorted(idx_to_context.keys())]
         return docs
     else:
-        # fallback: un doc par ligne (peut dupliquer)
         return [r["context"] for r in rows]
-
-# =========================
-# Matching question (utilisateur ↔ dataset)
-# =========================
-
-def find_best_matching_dataset_question(emb, dataset_rows, user_question) -> Tuple[Optional[Dict], float]:
-    if not dataset_rows:
-        return None, 0.0
-    uq_emb = emb.embed_query(user_question)
-    best_row, best_sim = None, -1.0
-    for r in dataset_rows:
-        q_emb = emb.embed_query(r["question"])
-        s = cosine(uq_emb, q_emb)
-        if s > best_sim:
-            best_sim = s
-            best_row = r
-    return best_row, best_sim
 
 # =========================
 # Évaluation
@@ -128,7 +108,7 @@ def find_best_matching_dataset_question(emb, dataset_rows, user_question) -> Tup
 def compute_retrieval_metrics(retrieved, sims, ground_truth, k=3):
     correct = sum(1 for idx in retrieved if idx in ground_truth)
     precision = correct / max(k, 1)
-    recall = correct / max(len(ground_truth), 1)
+    recall = correct / max(len(ground_truth), 1) if len(ground_truth) > 0 else 0.0
     ranks = [retrieved.index(gt) + 1 for gt in ground_truth if gt in retrieved]
     mrr = float(np.mean([1.0 / r for r in ranks])) if ranks else 0.0
     relevancy = float(np.mean([sims[i] for i in retrieved])) if retrieved else 0.0
@@ -148,28 +128,21 @@ def compute_generation_metrics(rag: RAG, query, answer, context_idxs, expected_a
         expected_sim = cosine(a_emb, ea_emb)
     return ans_rel, faithfulness, hallucination, expected_sim
 
-def compute_global_score(metrics: Dict[str, float]) -> float:
-    """
-    Score global = moyenne simple des métriques disponibles parmi:
-    Precision, Recall, MRR, RelevancyAvg, AnswerRel, Faithfulness, ExpectedSim (si dispo)
-    """
-    keys = ["precision", "recall", "mrr", "relevancy_avg", "answer_rel", "faithfulness"]
-    vals = [metrics[k] for k in keys if k in metrics]
-    if "expected_sim" in metrics and metrics["expected_sim"] is not None:
-        vals.append(metrics["expected_sim"])
-    return float(np.mean(vals)) if vals else 0.0
-
 # =========================
-# Logging CSV des échanges
+# Logging CSV des échanges (nouveau schéma SANS score global)
 # =========================
 
 LOG_HEADERS = [
     "id", "timestamp", "question", "answer",
     "retrieved_indices", "retrieved_texts",
-    "evaluation_json", "global_score"
+    "evaluation_json"
 ]
 
 def ensure_log_csv(path: str):
+    """
+    Crée le fichier de logs avec les bons headers s'il n'existe pas.
+    Si un ancien fichier existe avec d'autres colonnes, utiliser un nouveau chemin.
+    """
     if not os.path.exists(path):
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -181,16 +154,19 @@ def append_log_row(path: str, row: Dict):
         writer.writerow([row.get(h, "") for h in LOG_HEADERS])
 
 # =========================
-# CLI & boucle principale
+# CLI & exécution (5 questions aléatoires)
 # =========================
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Projet 2 — Chat + Évaluation sur dataset (CSV/JSON) et logs CSV.")
+    p = argparse.ArgumentParser(
+        description="Projet 2 — Évaluer le RAG sur N questions aléatoires du dataset (CSV/JSON) et enregistrer un CSV de logs."
+    )
     p.add_argument("--dataset", required=True, help="Chemin du dataset (csv ou json).")
     p.add_argument("--format", choices=["csv", "json"], required=True, help="Format du dataset.")
     p.add_argument("--out", required=True, help="Chemin du CSV de logs de sortie.")
     p.add_argument("--topk", type=int, default=int(os.environ.get("RAG_TOPK", "3")), help="Top-k retrieval.")
-    p.add_argument("--question", type=str, default=None, help="Mode one-shot : question unique (pas de boucle).")
+    p.add_argument("--num-questions", type=int, default=5, help="Nombre de questions à échantillonner dans le dataset.")
+    p.add_argument("--seed", type=int, default=None, help="Graine aléatoire pour reproductibilité (optionnel).")
     return p.parse_args()
 
 def main():
@@ -204,8 +180,10 @@ def main():
     else:
         dataset = load_dataset_json(args.dataset)
 
+    # Filtrer lignes avec question non vide
+    dataset = [r for r in dataset if str(r.get("question", "")).strip() != ""]
     if not dataset:
-        print("[Erreur] Dataset vide ou introuvable.")
+        print("[Erreur] Dataset vide ou aucune question disponible.")
         return
 
     # 2) Préparer docs (contexts) et RAG
@@ -216,37 +194,48 @@ def main():
     # 3) Préparer CSV logs
     ensure_log_csv(args.out)
     next_id = 1
-    # Si fichier existe avec data, reprends l'id suivant
     if os.path.exists(args.out):
         try:
             with open(args.out, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                existing_ids = [int(r["id"]) for r in reader if r.get("id", "").isdigit()]
+                existing_ids = []
+                for r in reader:
+                    try:
+                        existing_ids.append(int(r.get("id", "")))
+                    except Exception:
+                        continue
                 if existing_ids:
                     next_id = max(existing_ids) + 1
         except Exception:
             pass
 
-    def process_one_question(user_q: str):
-        nonlocal next_id
+    # 4) Échantillonner N questions aléatoires
+    if args.seed is not None:
+        random.seed(args.seed)
+    n = min(args.num_questions, len(dataset))
+    sampled_rows = random.sample(dataset, n) if n < len(dataset) else dataset
+
+    # 5) Évaluer chaque question échantillonnée
+    for row in sampled_rows:
+        user_q = row["question"]
+
         # Retrieval
         top_idxs, sims = rag.get_most_relevant_docs(user_q, k=args.topk)
         docs_for_gen = [rag.docs[i] for i in top_idxs]
 
         # Génération
         answer = rag.generate_answer(user_q, docs_for_gen)
+        print("\n--- Question ---")
+        print(user_q)
         print("\n--- Réponse ---")
         print(answer)
 
-        # Matching avec dataset pour ground truth & expected answer
-        best_row, match_sim = find_best_matching_dataset_question(rag.embeddings, dataset, user_q)
-
-        # Ground truth élargi (±1 autour du chunk source)
-        n = len(rag.docs)
-        if best_row is not None and isinstance(best_row.get("context_idx", -1), int) and best_row["context_idx"] >= 0:
-            ci = best_row["context_idx"]
-            ground_truth = {i for i in (ci - 1, ci, ci + 1) if 0 <= i < n}
-            expected_answer = best_row.get("reponse_attendue", "")
+        # Ground truth basé sur la ligne sélectionnée (±1 autour de context_idx)
+        n_docs = len(rag.docs)
+        ci = row.get("context_idx", -1)
+        if isinstance(ci, int) and ci >= 0:
+            ground_truth = {i for i in (ci - 1, ci, ci + 1) if 0 <= i < n_docs}
+            expected_answer = row.get("reponse_attendue", "")
         else:
             ground_truth = set()
             expected_answer = None
@@ -265,33 +254,18 @@ def main():
             "answer_rel": round(ans_rel, 4),
             "faithfulness": round(faith, 4),
             "hallucination": round(hallu, 4),
-            "expected_sim": round(exp_sim, 4) if exp_sim is not None else None,
-            "match_sim_question": round(match_sim, 4) if best_row is not None else None,
+            "expected_sim": round(exp_sim, 4) if exp_sim is not None else None
         }
-        global_score = round(compute_global_score(metrics), 4)
 
-        # Affichages console utiles
-        print("\n=== Documents récupérés (top-{}) ===".format(args.topk))
+        # Affichage court
+        print("\n=== Retrieval (top-{}) ===".format(args.topk))
         for rank, idx in enumerate(top_idxs, start=1):
             snippet = rag.docs[idx][:140] + ("..." if len(rag.docs[idx]) > 140 else "")
             print(f"{rank}. [#{idx}] {snippet}")
         print("\n=== Évaluation ===")
-        if best_row is None or (metrics["match_sim_question"] is not None and metrics["match_sim_question"] < 0.70):
-            print(f"[Avertissement] Alignement faible avec une question du dataset.")
-        print(
-            f"Retrieval: Precision@{args.topk}={metrics['precision']:.2f} | "
-            f"Recall@{args.topk}={metrics['recall']:.2f} | MRR={metrics['mrr']:.2f} | "
-            f"RelevancyAvg={metrics['relevancy_avg']:.2f}"
-        )
-        print(
-            f"Génération: AnswerRel={metrics['answer_rel']:.2f} | "
-            f"Faithfulness={metrics['faithfulness']:.2f} | "
-            f"Hallucination={metrics['hallucination']:.2f}"
-            + (f" | ExpectedSim={metrics['expected_sim']:.2f}" if metrics['expected_sim'] is not None else "")
-        )
-        print(f"Score global = {global_score:.2f}")
+        print(json.dumps(metrics, ensure_ascii=False, indent=2))
 
-        # Log CSV (une ligne par question)
+        # Log CSV : 1 ligne par question
         retrieved_texts_joined = "\n\n---\n".join(docs_for_gen)
         log_row = {
             "id": next_id,
@@ -300,28 +274,13 @@ def main():
             "answer": answer,
             "retrieved_indices": json.dumps(top_idxs, ensure_ascii=False),
             "retrieved_texts": retrieved_texts_joined,
-            "evaluation_json": json.dumps(metrics, ensure_ascii=False),
-            "global_score": global_score,
+            "evaluation_json": json.dumps(metrics, ensure_ascii=False)
         }
         append_log_row(args.out, log_row)
         print(f"[Log] Ligne ajoutée dans {args.out} (id={next_id}).")
         next_id += 1
 
-    # Mode one-shot
-    if args.question is not None:
-        process_one_question(args.question)
-        return
-
-    # Boucle interactive
-    print("\n=== Mode Chat (q pour quitter) ===")
-    while True:
-        user_q = input("\nVotre question > ").strip()
-        if user_q.lower() in {"q", "quit", "exit"}:
-            print("Bye.")
-            break
-        if not user_q:
-            continue
-        process_one_question(user_q)
+    print(f"\n[OK] {n} question(s) évaluée(s). Logs → {args.out}")
 
 if __name__ == "__main__":
     main()
